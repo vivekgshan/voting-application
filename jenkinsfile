@@ -4,6 +4,7 @@ pipeline {
     environment {
         COMPOSE_PROJECT_NAME = "voting"
         UI_SERVICE = "voting-ui"
+        MYSQL_SERVICE = "mysql-db"
     }
 
     stages {
@@ -13,13 +14,36 @@ pipeline {
             }
         }
 
+        stage('Install Docker Compose v2 (if needed)') {
+            steps {
+                script {
+                    def composeInstalled = sh(script: "docker compose version || true", returnStatus: true)
+                    if (composeInstalled != 0) {
+                        echo "🔧 Docker Compose v2 not found. Installing..."
+                        sh '''
+                            set -e
+                            DOCKER_COMPOSE_PLUGIN_DIR=/usr/libexec/docker/cli-plugins
+                            sudo mkdir -p $DOCKER_COMPOSE_PLUGIN_DIR
+                            sudo curl -SL https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-linux-x86_64 -o $DOCKER_COMPOSE_PLUGIN_DIR/docker-compose
+                            sudo chmod +x $DOCKER_COMPOSE_PLUGIN_DIR/docker-compose
+
+                            echo "✅ Docker Compose installed:"
+                            docker compose version
+                        '''
+                    } else {
+                        echo "✅ Docker Compose v2 is already installed."
+                    }
+                }
+            }
+        }
+
         stage('Build & Run Voting System') {
             steps {
                 script {
-                    echo "📦 Building and starting Voting UI and MySQL with Docker Compose..."
+                    echo "📦 Building and starting Voting UI and MySQL using Docker Compose..."
                     sh '''
-                        docker-compose down || true
-                        docker-compose up -d --build
+                        docker compose down || true
+                        docker compose up -d --build
                     '''
                 }
             }
@@ -47,17 +71,17 @@ pipeline {
         }
 
         failure {
-            echo '❌ Deployment pipeline failed. Displaying logs...'
+            echo '❌ Deployment pipeline failed. Showing logs...'
             script {
-                sh 'docker-compose logs voting-ui || true'
-                sh 'docker-compose logs mysql-db || true'
+                sh 'docker compose logs voting-ui || true'
+                sh 'docker compose logs mysql-db || true'
             }
         }
 
         always {
             echo '🧹 Cleaning up Docker containers...'
             script {
-                sh 'docker-compose down || true'
+                sh 'docker compose down || true'
             }
         }
     }
