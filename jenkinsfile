@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    environment {
+        DOCKER_COMPOSE_VERSION = "v2.24.5" // You can change this to the latest release
+    }
+
     stages {
         stage('Checkout') {
             steps {
@@ -10,23 +14,32 @@ pipeline {
 
         stage('Ensure Docker Compose v2 Installed') {
             steps {
-              script {
-                 def composeExists = sh(script: "docker compose version || true", returnStatus: true)
-                 if (composeExists != 0) {
-                     echo "Docker Compose v2 not available. Please install Docker Compose Plugin manually."
-                     error("Missing Docker Compose v2")
-                 } else {
-                     echo "Docker Compose v2 is available."
-                 }
-            }
-         }
-      }
+                script {
+                    def composeStatus = sh(script: "docker compose version > /dev/null 2>&1 || true", returnStatus: true)
+                    if (composeStatus != 0) {
+                        echo "🔧 Docker Compose v2 not found. Installing..."
 
+                        sh '''
+                        mkdir -p ~/.docker/cli-plugins
+                        curl -SL https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-linux-x86_64 -o ~/.docker/cli-plugins/docker-compose
+                        chmod +x ~/.docker/cli-plugins/docker-compose
+                        export PATH=$PATH:~/.docker/cli-plugins
+                        docker compose version
+                        '''
+                    } else {
+                        echo "✅ Docker Compose v2 is already installed."
+                        sh "docker compose version"
+                    }
+                }
+            }
+        }
 
         stage('Build & Run') {
             steps {
-                sh 'docker-compose down || true'
-                sh 'docker-compose up -d --build'
+                script {
+                    sh 'docker compose down || true'
+                    sh 'docker compose up -d --build'
+                }
             }
         }
 
@@ -36,9 +49,9 @@ pipeline {
                     sleep 10
                     def status = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost", returnStdout: true).trim()
                     if (status != '200') {
-                        error("Voting UI not responding (HTTP $status)")
+                        error("❌ Voting UI not responding (HTTP $status)")
                     } else {
-                        echo "Voting system running successfully (HTTP $status)"
+                        echo "✅ Voting system running successfully (HTTP $status)"
                     }
                 }
             }
@@ -47,7 +60,10 @@ pipeline {
 
     post {
         always {
-            echo 'Build completed.'
+            echo '🛠️ Jenkins pipeline execution completed.'
+        }
+        failure {
+            echo '⚠️ One or more stages failed. Please check the logs.'
         }
     }
 }
