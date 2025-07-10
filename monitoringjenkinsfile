@@ -1,0 +1,58 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Install Docker Compose if Missing') {
+            steps {
+                script {
+                    def composeCheck = sh(script: 'docker compose version || true', returnStatus: true)
+                    if (composeCheck != 0) {
+                        error("❌ Docker Compose v2 is not available.")
+                    } else {
+                        echo "✅ Docker Compose v2 is available."
+                    }
+                }
+            }
+        }
+
+        stage('Deploy Prometheus + Grafana') {
+            steps {
+                dir('monitoring') {
+                    echo "📦 Deploying monitoring stack..."
+                    sh 'docker compose down || true'
+                    sh 'docker compose up -d --build'
+                }
+            }
+        }
+
+        stage('Validate Monitoring Services') {
+            steps {
+                script {
+                    sleep 10
+                    def prometheusStatus = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost:9090", returnStdout: true).trim()
+                    def grafanaStatus = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost:3000", returnStdout: true).trim()
+                    
+                    if (prometheusStatus != '200') {
+                        error("❌ Prometheus not reachable (HTTP $prometheusStatus)")
+                    }
+                    if (grafanaStatus != '200') {
+                        error("❌ Grafana not reachable (HTTP $grafanaStatus)")
+                    }
+                    echo "✅ Prometheus & Grafana are up and running"
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo '🔚 Monitoring pipeline completed.'
+        }
+    }
+}
