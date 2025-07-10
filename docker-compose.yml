@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8
+    container_name: voting_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: votingdb
+      MYSQL_USER: votinguser
+      MYSQL_PASSWORD: votingpass
+    volumes:
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "3306:3306"
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: voting_php_ui
+    restart: always
+    ports:
+      - "80:80"
+    environment:
+      DB_HOST: mysql
+      DB_NAME: votingdb
+      DB_USER: votinguser
+      DB_PASS: votingpass
+    depends_on:
+      - mysql
