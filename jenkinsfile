@@ -96,11 +96,7 @@ pipeline {
     }
 
     post {
-        always {
-            echo '🧹 Cleaning up project containers...'
-            sh 'docker compose down || true'
-        }
-
+        
         failure {
             echo '❌ Build failed. Showing logs...'
             sh 'docker compose logs voting-ui || true'
