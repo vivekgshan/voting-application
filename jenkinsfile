@@ -8,57 +8,65 @@ pipeline {
     }
 
     stages {
-        stage('Checkout') {
+        stage('Run Prerequisites') {
+            steps {
+                echo "🚀 Ensuring Docker Compose is available..."
+                build job: 'Packages-Installation', wait: true
+            }
+        }
+
+        stage('Checkout Source') {
             steps {
                 checkout scm
             }
         }
 
-        stage('Install Docker Compose v2 (if needed)') {
+        stage('Restart Containers if Running') {
             steps {
                 script {
-                    def composeInstalled = sh(script: "docker compose version || true", returnStatus: true)
-                    if (composeInstalled != 0) {
-                        echo "🔧 Docker Compose v2 not found. Installing..."
-                        sh '''
-                            set -e
-                            DOCKER_COMPOSE_PLUGIN_DIR=/usr/libexec/docker/cli-plugins
-                            sudo mkdir -p $DOCKER_COMPOSE_PLUGIN_DIR
-                            sudo curl -SL https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-linux-x86_64 -o $DOCKER_COMPOSE_PLUGIN_DIR/docker-compose
-                            sudo chmod +x $DOCKER_COMPOSE_PLUGIN_DIR/docker-compose
+                    echo "♻️ Restarting containers if already running..."
 
-                            echo "✅ Docker Compose installed:"
-                            docker compose version
-                        '''
+                    // Restart MySQL if running
+                    def mysqlRunning = sh(script: "docker ps --filter 'name=${MYSQL_SERVICE}' --format '{{.Names}}'", returnStdout: true).trim()
+                    if (mysqlRunning == "${MYSQL_SERVICE}") {
+                        echo "🔁 Restarting ${MYSQL_SERVICE}..."
+                        sh "docker restart ${MYSQL_SERVICE}"
                     } else {
-                        echo "✅ Docker Compose v2 is already installed."
+                        echo "ℹ️ ${MYSQL_SERVICE} is not running."
+                    }
+
+                    // Restart Voting UI if running
+                    def uiRunning = sh(script: "docker ps --filter 'name=${UI_SERVICE}' --format '{{.Names}}'", returnStdout: true).trim()
+                    if (uiRunning == "${UI_SERVICE}") {
+                        echo "🔁 Restarting ${UI_SERVICE}..."
+                        sh "docker restart ${UI_SERVICE}"
+                    } else {
+                        echo "ℹ️ ${UI_SERVICE} is not running."
                     }
                 }
             }
         }
 
-        stage('Build & Run Voting System') {
+        stage('Build & Run Voting App') {
             steps {
-                script {
-                    echo "📦 Building and starting Voting UI and MySQL using Docker Compose..."
-                    sh '''
-                        docker compose down || true
-                        docker compose up -d --build
-                    '''
-                }
+                echo "📦 Building and starting containers using docker-compose..."
+                sh '''
+                    docker compose down || true
+                    docker compose up -d --build
+                '''
             }
         }
 
         stage('Health Check') {
             steps {
                 script {
-                    echo "🔍 Waiting for the voting UI to respond..."
-                    sleep 15
+                    echo "🔍 Verifying voting UI is up..."
+                    sleep 10
                     def status = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost", returnStdout: true).trim()
                     if (status != '200') {
-                        error("❌ Voting UI is not responding (HTTP ${status})")
+                        error("❌ Voting UI not responding (HTTP ${status})")
                     } else {
-                        echo "✅ Voting UI is running successfully (HTTP ${status})"
+                        echo "✅ Voting UI is healthy (HTTP ${status})"
                     }
                 }
             }
@@ -66,23 +74,19 @@ pipeline {
     }
 
     post {
-        success {
-            echo '🎉 Deployment pipeline succeeded!'
+        always {
+            echo '🧹 Cleaning up resources...'
+            sh 'docker compose down || true'
         }
 
         failure {
-            echo '❌ Deployment pipeline failed. Showing logs...'
-            script {
-                sh 'docker compose logs voting-ui || true'
-                sh 'docker compose logs mysql-db || true'
-            }
+            echo '❌ Build failed. Showing container logs...'
+            sh 'docker compose logs voting-ui || true'
+            sh 'docker compose logs mysql-db || true'
         }
 
-        always {
-            echo '🧹 Cleaning up Docker containers...'
-            script {
-                sh 'docker compose down || true'
-            }
+        success {
+            echo '🎉 Deployment succeeded!'
         }
     }
 }
