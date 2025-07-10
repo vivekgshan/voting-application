@@ -5,7 +5,7 @@ pipeline {
         MYSQL_DB = "votingdb"
         MYSQL_USER = "votinguser"
         MYSQL_PASS = "votingpass"
-        MYSQL_ROOT_PASSWORD = "rootpass" // optional if root has no password
+        MYSQL_ROOT_PASSWORD = "rootpass"
         PHP_UI_CONTAINER = "voting_php_ui"
     }
 
@@ -16,42 +16,61 @@ pipeline {
             }
         }
 
-        // Optional: Uncomment if SonarQube is configured
-        // stage('SonarQube Analysis') {
-        //     steps {
-        //         withSonarQubeEnv('SonarQubeServer') {
-        //             sh 'sonar-scanner'
-        //         }
-        //     }
-        // }
+        // Uncomment if SonarQube is configured in Jenkins
+        /*
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv('SonarQubeServer') {
+                    sh 'sonar-scanner'
+                }
+            }
+        }
+        */
 
         stage('Ensure MySQL Installed & Running') {
             steps {
                 script {
-                    def mysqlCheck = sh(script: "which mysql || true", returnStdout: true).trim()
-                    if (!mysqlCheck) {
-                        echo "🔧 Installing MySQL 8.0 on Amazon Linux 2023..."
+                    try {
+                        def mysqlCheck = sh(script: "which mysql || true", returnStdout: true).trim()
+                        if (!mysqlCheck) {
+                            echo "🔧 Installing MySQL 8.0 on Amazon Linux 2023..."
+                            sh '''
+                                set -e
+                                echo "📦 Adding MySQL Yum repo..."
+                                sudo rpm -Uvh https://dev.mysql.com/get/mysql80-community-release-el9-1.noarch.rpm || true
+
+                                echo "🔑 Importing MySQL GPG key..."
+                                sudo rpm --import https://repo.mysql.com/RPM-GPG-KEY-mysql-2022
+
+                                echo "🧹 Cleaning cached packages..."
+                                sudo dnf clean packages || true
+
+                                echo "📦 Installing MySQL..."
+                                sudo dnf install -y mysql-community-server
+
+                                echo "🔁 Enabling MySQL service..."
+                                sudo systemctl enable mysqld
+                            '''
+                        } else {
+                            echo "✅ MySQL already installed."
+                        }
+
+                        echo "🚀 Starting MySQL..."
                         sh '''
-                        sudo rpm -Uvh https://dev.mysql.com/get/mysql80-community-release-el9-1.noarch.rpm
-                        sudo dnf install -y mysql-community-server
-                        sudo systemctl enable mysqld
+                            sudo systemctl start mysqld
+                            sudo systemctl status mysqld || true
                         '''
-                    } else {
-                        echo "✅ MySQL is already installed."
+
+                        echo "⚙️ Creating DB and user..."
+                        sh """
+                            sudo mysql -uroot -e "CREATE DATABASE IF NOT EXISTS ${MYSQL_DB};"
+                            sudo mysql -uroot -e "CREATE USER IF NOT EXISTS '${MYSQL_USER}'@'localhost' IDENTIFIED BY '${MYSQL_PASS}';"
+                            sudo mysql -uroot -e "GRANT ALL PRIVILEGES ON ${MYSQL_DB}.* TO '${MYSQL_USER}'@'localhost'; FLUSH PRIVILEGES;"
+                        """
+                    } catch (Exception e) {
+                        echo "❌ MySQL installation or configuration failed: ${e.message}"
+                        throw e
                     }
-
-                    echo "🔁 Starting MySQL service..."
-                    sh '''
-                    sudo systemctl start mysqld
-                    sudo systemctl status mysqld || true
-                    '''
-
-                    echo "⚙️ Configuring MySQL user and database..."
-                    sh """
-                    sudo mysql -uroot -e "CREATE DATABASE IF NOT EXISTS ${MYSQL_DB};"
-                    sudo mysql -uroot -e "CREATE USER IF NOT EXISTS '${MYSQL_USER}'@'localhost' IDENTIFIED BY '${MYSQL_PASS}';"
-                    sudo mysql -uroot -e "GRANT ALL PRIVILEGES ON ${MYSQL_DB}.* TO '${MYSQL_USER}'@'localhost'; FLUSH PRIVILEGES;"
-                    """
                 }
             }
         }
@@ -59,7 +78,7 @@ pipeline {
         stage('Wait for MySQL to be Ready') {
             steps {
                 script {
-                    echo "⏳ Waiting for MySQL to become available..."
+                    echo "⏳ Waiting for MySQL to respond..."
                     timeout(time: 60, unit: 'SECONDS') {
                         waitUntil {
                             def result = sh(
@@ -69,7 +88,7 @@ pipeline {
                             return (result == 0)
                         }
                     }
-                    echo "✅ MySQL is ready."
+                    echo "✅ MySQL is up and ready."
                 }
             }
         }
@@ -77,20 +96,20 @@ pipeline {
         stage('Build & Run PHP Voting UI in Docker') {
             steps {
                 script {
-                    echo "🛠️ Building Docker image for Voting UI..."
+                    echo "🛠️ Building Docker image..."
                     sh 'docker build -t voting-ui ./frontend'
 
-                    echo "🚀 Running PHP Voting UI container..."
+                    echo "🚀 Running container..."
                     sh """
-                    docker rm -f ${PHP_UI_CONTAINER} || true
-                    docker run -d \\
-                        --name ${PHP_UI_CONTAINER} \\
-                        -p 80:80 \\
-                        -e DB_HOST=host.docker.internal \\
-                        -e DB_NAME=${MYSQL_DB} \\
-                        -e DB_USER=${MYSQL_USER} \\
-                        -e DB_PASS=${MYSQL_PASS} \\
-                        voting-ui
+                        docker rm -f ${PHP_UI_CONTAINER} || true
+                        docker run -d \\
+                            --name ${PHP_UI_CONTAINER} \\
+                            -p 80:80 \\
+                            -e DB_HOST=host.docker.internal \\
+                            -e DB_NAME=${MYSQL_DB} \\
+                            -e DB_USER=${MYSQL_USER} \\
+                            -e DB_PASS=${MYSQL_PASS} \\
+                            voting-ui
                     """
                 }
             }
@@ -99,13 +118,13 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
-                    echo "🔍 Checking if UI is available..."
+                    echo "🔍 Checking UI health..."
                     sleep 10
                     def status = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost", returnStdout: true).trim()
                     if (status != '200') {
-                        error("❌ Voting UI not responding (HTTP $status)")
+                        error("❌ Voting UI is not responding (HTTP $status)")
                     } else {
-                        echo "✅ Voting UI is live (HTTP $status)"
+                        echo "✅ Voting UI is running (HTTP $status)"
                     }
                 }
             }
@@ -114,17 +133,17 @@ pipeline {
 
     post {
         success {
-            echo '🎉 All stages passed and services are running!'
+            echo '🎉 Pipeline completed successfully.'
         }
         failure {
-            echo '❌ One or more stages failed.'
+            echo '❌ Pipeline failed. Showing logs...'
             script {
                 sh "docker logs ${PHP_UI_CONTAINER} || true"
                 sh "sudo systemctl status mysqld || true"
             }
         }
         always {
-            echo '🧼 Cleaning up Docker containers (optional)...'
+            echo '🧼 Cleanup: stopping Docker container...'
             script {
                 sh "docker stop ${PHP_UI_CONTAINER} || true"
                 sh "docker rm ${PHP_UI_CONTAINER} || true"
