@@ -2,10 +2,8 @@ pipeline {
     agent any
 
     environment {
-        MYSQL_DB = "votingdb"
-        MYSQL_USER = "votinguser"
-        MYSQL_PASS = "votingpass"
-        PHP_UI_CONTAINER = "voting_php_ui"
+        COMPOSE_PROJECT_NAME = "voting"
+        UI_SERVICE = "voting-ui"
     }
 
     stages {
@@ -15,76 +13,14 @@ pipeline {
             }
         }
 
-        // ❌ MySQL installation stage disabled
-        /*
-        stage('Ensure MySQL Installed & Running') {
+        stage('Build & Run Voting System') {
             steps {
                 script {
-                    try {
-                        def mysqlCheck = sh(script: "which mysql || true", returnStdout: true).trim()
-                        if (!mysqlCheck) {
-                            echo "🔧 Installing MySQL skipped."
-                        } else {
-                            echo "✅ MySQL already installed."
-                        }
-
-                        echo "🚀 Starting MySQL..."
-                        sh '''
-                            sudo systemctl start mysqld
-                            sudo systemctl status mysqld || true
-                        '''
-
-                        echo "⚙️ Creating DB and user..."
-                        sh """
-                            sudo mysql -uroot -e "CREATE DATABASE IF NOT EXISTS ${MYSQL_DB};"
-                            sudo mysql -uroot -e "CREATE USER IF NOT EXISTS '${MYSQL_USER}'@'localhost' IDENTIFIED BY '${MYSQL_PASS}';"
-                            sudo mysql -uroot -e "GRANT ALL PRIVILEGES ON ${MYSQL_DB}.* TO '${MYSQL_USER}'@'localhost'; FLUSH PRIVILEGES;"
-                        """
-                    } catch (Exception e) {
-                        echo "❌ MySQL installation or configuration failed: ${e.message}"
-                        throw e
-                    }
-                }
-            }
-        }
-        */
-
-        stage('Wait for MySQL to be Ready') {
-            steps {
-                script {
-                    echo "⏳ Waiting for MySQL to respond..."
-                    timeout(time: 60, unit: 'SECONDS') {
-                        waitUntil {
-                            def result = sh(
-                                script: "mysqladmin ping -h 127.0.0.1 --silent",
-                                returnStatus: true
-                            )
-                            return (result == 0)
-                        }
-                    }
-                    echo "✅ MySQL is up and ready."
-                }
-            }
-        }
-
-        stage('Build & Run PHP Voting UI in Docker') {
-            steps {
-                script {
-                    echo "🛠️ Building Docker image..."
-                    sh 'docker build -t voting-ui ./frontend'
-
-                    echo "🚀 Running container..."
-                    sh """
-                        docker rm -f ${PHP_UI_CONTAINER} || true
-                        docker run -d \\
-                            --name ${PHP_UI_CONTAINER} \\
-                            -p 80:80 \\
-                            -e DB_HOST=host.docker.internal \\
-                            -e DB_NAME=${MYSQL_DB} \\
-                            -e DB_USER=${MYSQL_USER} \\
-                            -e DB_PASS=${MYSQL_PASS} \\
-                            voting-ui
-                    """
+                    echo "📦 Building and starting Voting UI and MySQL with Docker Compose..."
+                    sh '''
+                        docker-compose down || true
+                        docker-compose up -d --build
+                    '''
                 }
             }
         }
@@ -92,13 +28,13 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
-                    echo "🔍 Checking UI health..."
-                    sleep 10
+                    echo "🔍 Waiting for the voting UI to respond..."
+                    sleep 15
                     def status = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost", returnStdout: true).trim()
                     if (status != '200') {
-                        error("❌ Voting UI is not responding (HTTP $status)")
+                        error("❌ Voting UI is not responding (HTTP ${status})")
                     } else {
-                        echo "✅ Voting UI is running (HTTP $status)"
+                        echo "✅ Voting UI is running successfully (HTTP ${status})"
                     }
                 }
             }
@@ -107,20 +43,21 @@ pipeline {
 
     post {
         success {
-            echo '🎉 Pipeline completed successfully.'
+            echo '🎉 Deployment pipeline succeeded!'
         }
+
         failure {
-            echo '❌ Pipeline failed. Showing logs...'
+            echo '❌ Deployment pipeline failed. Displaying logs...'
             script {
-                sh "docker logs ${PHP_UI_CONTAINER} || true"
-                sh "sudo systemctl status mysqld || true"
+                sh 'docker-compose logs voting-ui || true'
+                sh 'docker-compose logs mysql-db || true'
             }
         }
+
         always {
-            echo '🧼 Cleanup: stopping Docker container...'
+            echo '🧹 Cleaning up Docker containers...'
             script {
-                sh "docker stop ${PHP_UI_CONTAINER} || true"
-                sh "docker rm ${PHP_UI_CONTAINER} || true"
+                sh 'docker-compose down || true'
             }
         }
     }
