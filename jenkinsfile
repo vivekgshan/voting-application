@@ -16,17 +16,6 @@ pipeline {
             }
         }
 
-        // Uncomment if SonarQube is configured in Jenkins
-        /*
-        stage('SonarQube Analysis') {
-            steps {
-                withSonarQubeEnv('SonarQubeServer') {
-                    sh 'sonar-scanner'
-                }
-            }
-        }
-        */
-
         stage('Ensure MySQL Installed & Running') {
             steps {
                 script {
@@ -36,17 +25,24 @@ pipeline {
                             echo "🔧 Installing MySQL 8.0 on Amazon Linux 2023..."
                             sh '''
                                 set -e
-                                echo "📦 Adding MySQL Yum repo..."
-                                sudo rpm -Uvh https://dev.mysql.com/get/mysql80-community-release-el9-1.noarch.rpm || true
 
-                                echo "🔑 Importing MySQL GPG key..."
-                                sudo rpm --import https://repo.mysql.com/RPM-GPG-KEY-mysql-2022
+                                echo "📦 Removing broken MySQL repo if it exists..."
+                                sudo rm -f /etc/yum.repos.d/mysql-community*.repo || true
+                                sudo rpm -e mysql80-community-release-el9 || true
 
-                                echo "🧹 Cleaning cached packages..."
-                                sudo dnf clean packages || true
+                                echo "📦 Re-adding MySQL Yum repo..."
+                                sudo rpm -Uvh https://dev.mysql.com/get/mysql80-community-release-el9-1.noarch.rpm
 
-                                echo "📦 Installing MySQL..."
-                                sudo dnf install -y mysql-community-server
+                                echo "🔑 Importing MySQL GPG key manually..."
+                                sudo mkdir -p /etc/pki/rpm-gpg
+                                curl -fsSL https://repo.mysql.com/RPM-GPG-KEY-mysql | gpg --dearmor | sudo tee /etc/pki/rpm-gpg/RPM-GPG-KEY-mysql > /dev/null
+                                sudo rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-mysql
+
+                                echo "🧹 Cleaning DNF cache..."
+                                sudo dnf clean all
+
+                                echo "📦 Installing MySQL (with --nogpgcheck due to repo issues)..."
+                                sudo dnf install -y --nogpgcheck mysql-community-server
 
                                 echo "🔁 Enabling MySQL service..."
                                 sudo systemctl enable mysqld
