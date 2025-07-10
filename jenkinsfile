@@ -5,7 +5,6 @@ pipeline {
         MYSQL_DB = "votingdb"
         MYSQL_USER = "votinguser"
         MYSQL_PASS = "votingpass"
-        MYSQL_ROOT_PASSWORD = "rootpass"
         PHP_UI_CONTAINER = "voting_php_ui"
     }
 
@@ -16,37 +15,15 @@ pipeline {
             }
         }
 
+        // ❌ MySQL installation stage disabled
+        /*
         stage('Ensure MySQL Installed & Running') {
             steps {
                 script {
                     try {
                         def mysqlCheck = sh(script: "which mysql || true", returnStdout: true).trim()
                         if (!mysqlCheck) {
-                            echo "🔧 Installing MySQL 8.0 on Amazon Linux 2023..."
-                            sh '''
-                                set -e
-
-                                echo "📦 Removing broken MySQL repo if it exists..."
-                                sudo rm -f /etc/yum.repos.d/mysql-community*.repo || true
-                                sudo rpm -e mysql80-community-release-el9 || true
-
-                                echo "📦 Re-adding MySQL Yum repo..."
-                                sudo rpm -Uvh https://dev.mysql.com/get/mysql80-community-release-el9-1.noarch.rpm
-
-                                echo "🔑 Importing MySQL GPG key manually..."
-                                sudo mkdir -p /etc/pki/rpm-gpg
-                                curl -fsSL https://repo.mysql.com/RPM-GPG-KEY-mysql | gpg --dearmor | sudo tee /etc/pki/rpm-gpg/RPM-GPG-KEY-mysql > /dev/null
-                                sudo rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-mysql
-
-                                echo "🧹 Cleaning DNF cache..."
-                                sudo dnf clean all
-
-                                echo "📦 Installing MySQL (with --nogpgcheck due to repo issues)..."
-                                sudo dnf install -y --nogpgcheck mysql-community-server
-
-                                echo "🔁 Enabling MySQL service..."
-                                sudo systemctl enable mysqld
-                            '''
+                            echo "🔧 Installing MySQL skipped."
                         } else {
                             echo "✅ MySQL already installed."
                         }
@@ -70,6 +47,7 @@ pipeline {
                 }
             }
         }
+        */
 
         stage('Wait for MySQL to be Ready') {
             steps {
