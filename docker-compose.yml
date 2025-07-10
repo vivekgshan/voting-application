@@ -1,31 +1,42 @@
 version: '3.8'
 
 services:
-  mysql:
-    image: mysql:8
-    container_name: voting_mysql
-    restart: always
+  mysql-db:
+    image: mysql:8.0
+    container_name: mysql-db
     environment:
       MYSQL_ROOT_PASSWORD: rootpass
       MYSQL_DATABASE: votingdb
       MYSQL_USER: votinguser
       MYSQL_PASSWORD: votingpass
-    volumes:
-      - ./mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "3306:3306"
+    networks:
+      - voting-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  frontend:
+  voting-ui:
     build:
       context: ./frontend
-    container_name: voting_php_ui
-    restart: always
+    container_name: voting-ui
     ports:
       - "80:80"
     environment:
-      DB_HOST: mysql
+      DB_HOST: mysql-db
       DB_NAME: votingdb
       DB_USER: votinguser
       DB_PASS: votingpass
     depends_on:
-      - mysql
+      mysql-db:
+        condition: service_healthy
+    networks:
+      - voting-net
+
+networks:
+  voting-net:
+    driver: bridge
+
