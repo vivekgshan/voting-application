@@ -2,8 +2,11 @@ pipeline {
     agent any
 
     environment {
-        COMPOSE_VERSION = "v2.24.5"
-        COMPOSE_PLUGIN_PATH = "/usr/local/lib/docker/cli-plugins"
+        MYSQL_DB = "votingdb"
+        MYSQL_USER = "votinguser"
+        MYSQL_PASS = "votingpass"
+        MYSQL_ROOT_PASSWORD = "rootpass"
+        PHP_UI_CONTAINER = "voting_php_ui"
     }
 
     stages {
@@ -13,37 +16,57 @@ pipeline {
             }
         }
 
-        stage('Ensure Docker Compose v2 Installed') {
+        stage('Ensure MySQL Installed & Running') {
             steps {
                 script {
-                    def composeStatus = sh(script: "docker compose version > /dev/null 2>&1 || true", returnStatus: true)
-                    if (composeStatus != 0) {
-                        echo "🔧 Docker Compose v2 not found. Installing..."
-
+                    def mysqlCheck = sh(script: "which mysql || true", returnStdout: true).trim()
+                    if (!mysqlCheck) {
+                        echo "🔧 Installing MySQL..."
                         sh """
-                        sudo mkdir -p ${COMPOSE_PLUGIN_PATH}
-                        sudo curl -SL https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-x86_64 \\
-                             -o ${COMPOSE_PLUGIN_PATH}/docker-compose
-                        sudo chmod +x ${COMPOSE_PLUGIN_PATH}/docker-compose
-                        echo "✅ Docker Compose v2 installed successfully."
-                        docker compose version
+                        sudo apt-get update
+                        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server
+                        sudo systemctl enable mysql
                         """
                     } else {
-                        echo "✅ Docker Compose v2 is already installed."
-                        sh "docker compose version"
+                        echo "✅ MySQL is already installed."
                     }
+
+                    echo "🔁 Starting MySQL service..."
+                    sh """
+                    sudo systemctl start mysql
+                    sudo systemctl status mysql || true
+                    """
+
+                    echo "⚙️ Configuring MySQL user and database..."
+                    sh """
+                    sudo mysql -uroot -e "CREATE DATABASE IF NOT EXISTS ${MYSQL_DB};"
+                    sudo mysql -uroot -e "CREATE USER IF NOT EXISTS '${MYSQL_USER}'@'localhost' IDENTIFIED BY '${MYSQL_PASS}';"
+                    sudo mysql -uroot -e "GRANT ALL PRIVILEGES ON ${MYSQL_DB}.* TO '${MYSQL_USER}'@'localhost'; FLUSH PRIVILEGES;"
+                    """
+
+                    echo "🟢 MySQL is ready."
                 }
             }
         }
 
-        stage('Build & Run Voting System') {
+        stage('Build & Run PHP Voting UI in Docker') {
             steps {
                 script {
-                    echo "🛠️ Bringing down any existing containers..."
-                    sh 'docker compose down || true'
+                    echo "🛠️ Building Docker image..."
+                    sh 'docker build -t voting-ui ./frontend'
 
-                    echo "🚀 Building and launching containers..."
-                    sh 'docker compose up -d --build'
+                    echo "🚀 Starting PHP UI container..."
+                    sh """
+                    docker rm -f ${PHP_UI_CONTAINER} || true
+                    docker run -d \\
+                        --name ${PHP_UI_CONTAINER} \\
+                        -p 80:80 \\
+                        -e DB_HOST=host.docker.internal \\
+                        -e DB_NAME=${MYSQL_DB} \\
+                        -e DB_USER=${MYSQL_USER} \\
+                        -e DB_PASS=${MYSQL_PASS} \\
+                        voting-ui
+                    """
                 }
             }
         }
@@ -51,14 +74,13 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
-                    echo "⏳ Waiting for application to start..."
+                    echo "⏳ Waiting for app to come online..."
                     sleep 10
-
                     def status = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost", returnStdout: true).trim()
                     if (status != '200') {
                         error("❌ Voting UI not responding (HTTP $status)")
                     } else {
-                        echo "✅ Voting system running successfully (HTTP $status)"
+                        echo "✅ Voting UI is live (HTTP $status)"
                     }
                 }
             }
@@ -67,13 +89,17 @@ pipeline {
 
     post {
         always {
-            echo '📦 Jenkins pipeline execution completed.'
-        }
-        success {
-            echo '🎉 Pipeline finished successfully!'
+            echo '🧪 Pipeline run finished.'
         }
         failure {
-            echo '⚠️ One or more stages failed. Check logs above.'
+            echo '❌ One or more steps failed.'
+            script {
+                sh "docker logs ${PHP_UI_CONTAINER} || true"
+                sh "sudo systemctl status mysql || true"
+            }
+        }
+        success {
+            echo '🎉 All services up and running successfully!'
         }
     }
 }
