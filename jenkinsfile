@@ -5,10 +5,8 @@ pipeline {
         MYSQL_DB = "votingdb"
         MYSQL_USER = "votinguser"
         MYSQL_PASS = "votingpass"
-        MYSQL_ROOT_PASSWORD = "rootpass"
+        MYSQL_ROOT_PASSWORD = "rootpass" // optional if root has no password
         PHP_UI_CONTAINER = "voting_php_ui"
-        SONAR_PROJECT_KEY = "voting-ui"
-        SONAR_SCANNER_OPTS = "-Dsonar.projectKey=${SONAR_PROJECT_KEY}"
     }
 
     stages {
@@ -18,26 +16,28 @@ pipeline {
             }
         }
 
-   //     stage('SonarQube Analysis') {
-   //         steps {
-   //             withSonarQubeEnv('SonarQubeServer') {
-   //                 sh 'sonar-scanner'
-   //             }
-   //         }
-   //     }
+        // Optional: Uncomment if SonarQube is configured
+        // stage('SonarQube Analysis') {
+        //     steps {
+        //         withSonarQubeEnv('SonarQubeServer') {
+        //             sh 'sonar-scanner'
+        //         }
+        //     }
+        // }
 
         stage('Ensure MySQL Installed & Running') {
             steps {
                 script {
                     def mysqlCheck = sh(script: "which mysql || true", returnStdout: true).trim()
                     if (!mysqlCheck) {
-                        echo "🔧 Installing MySQL using yum..."
+                        echo "🔧 Installing MySQL 8.0 on Amazon Linux 2023..."
                         sh '''
-                        sudo yum install -y mysql-server
+                        sudo rpm -Uvh https://dev.mysql.com/get/mysql80-community-release-el9-1.noarch.rpm
+                        sudo dnf install -y mysql-community-server
                         sudo systemctl enable mysqld
                         '''
                     } else {
-                        echo "✅ MySQL already installed."
+                        echo "✅ MySQL is already installed."
                     }
 
                     echo "🔁 Starting MySQL service..."
