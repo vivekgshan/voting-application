@@ -8,6 +8,21 @@ pipeline {
             }
         }
 
+        stage('Ensure Docker Compose v2 Installed') {
+            steps {
+              script {
+                 def composeExists = sh(script: "docker compose version || true", returnStatus: true)
+                 if (composeExists != 0) {
+                     echo "Docker Compose v2 not available. Please install Docker Compose Plugin manually."
+                     error("Missing Docker Compose v2")
+                 } else {
+                     echo "Docker Compose v2 is available."
+                 }
+            }
+         }
+      }
+
+
         stage('Build & Run') {
             steps {
                 sh 'docker-compose down || true'
