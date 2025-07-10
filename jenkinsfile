@@ -5,12 +5,13 @@ pipeline {
         COMPOSE_PROJECT_NAME = "voting"
         UI_SERVICE = "voting-ui"
         MYSQL_SERVICE = "mysql-db"
+        OLD_UI_CONTAINER = "voting_php_ui"
     }
 
     stages {
         stage('Run Prerequisites') {
             steps {
-                echo "🚀 Ensuring Docker Compose is available..."
+                echo "🚀 Ensuring Docker Compose is installed..."
                 build job: 'Packages-Installation', wait: true
             }
         }
@@ -21,21 +22,42 @@ pipeline {
             }
         }
 
-        stage('Restart Containers if Running') {
+        stage('Remove Old UI Container') {
             steps {
                 script {
-                    echo "♻️ Restarting containers if already running..."
-
-                    // Restart MySQL if running
-                    def mysqlRunning = sh(script: "docker ps --filter 'name=${MYSQL_SERVICE}' --format '{{.Names}}'", returnStdout: true).trim()
-                    if (mysqlRunning == "${MYSQL_SERVICE}") {
-                        echo "🔁 Restarting ${MYSQL_SERVICE}..."
-                        sh "docker restart ${MYSQL_SERVICE}"
+                    echo "🧼 Checking for old UI container '${OLD_UI_CONTAINER}'..."
+                    def exists = sh(script: "docker ps -a --filter 'name=${OLD_UI_CONTAINER}' --format '{{.Names}}'", returnStdout: true).trim()
+                    if (exists == "${OLD_UI_CONTAINER}") {
+                        echo "🛑 Removing old container: ${OLD_UI_CONTAINER}"
+                        sh "docker stop ${OLD_UI_CONTAINER} || true"
+                        sh "docker rm ${OLD_UI_CONTAINER} || true"
                     } else {
-                        echo "ℹ️ ${MYSQL_SERVICE} is not running."
+                        echo "✅ No old UI container found."
+                    }
+                }
+            }
+        }
+
+        stage('Conditional Restarts') {
+            steps {
+                script {
+                    echo "♻️ Checking running containers..."
+
+                    // Skip restarting mysql if healthy
+                    def mysqlRunning = sh(script: "docker inspect -f '{{.State.Health.Status}}' ${MYSQL_SERVICE} || echo not_found", returnStdout: true).trim()
+                    if (mysqlRunning == "healthy") {
+                        echo "✅ ${MYSQL_SERVICE} is already healthy. Skipping restart."
+                    } else {
+                        def mysqlExists = sh(script: "docker ps --filter 'name=${MYSQL_SERVICE}' --format '{{.Names}}'", returnStdout: true).trim()
+                        if (mysqlExists == "${MYSQL_SERVICE}") {
+                            echo "🔁 Restarting ${MYSQL_SERVICE} (not healthy)..."
+                            sh "docker restart ${MYSQL_SERVICE}"
+                        } else {
+                            echo "ℹ️ ${MYSQL_SERVICE} is not running. Will be started in next step."
+                        }
                     }
 
-                    // Restart Voting UI if running
+                    // Restart voting-ui if running
                     def uiRunning = sh(script: "docker ps --filter 'name=${UI_SERVICE}' --format '{{.Names}}'", returnStdout: true).trim()
                     if (uiRunning == "${UI_SERVICE}") {
                         echo "🔁 Restarting ${UI_SERVICE}..."
@@ -49,7 +71,7 @@ pipeline {
 
         stage('Build & Run Voting App') {
             steps {
-                echo "📦 Building and starting containers using docker-compose..."
+                echo "📦 Building and starting containers..."
                 sh '''
                     docker compose down || true
                     docker compose up -d --build
@@ -60,7 +82,7 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
-                    echo "🔍 Verifying voting UI is up..."
+                    echo "🔍 Verifying UI availability..."
                     sleep 10
                     def status = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost", returnStdout: true).trim()
                     if (status != '200') {
@@ -75,18 +97,18 @@ pipeline {
 
     post {
         always {
-            echo '🧹 Cleaning up resources...'
+            echo '🧹 Cleaning up project containers...'
             sh 'docker compose down || true'
         }
 
         failure {
-            echo '❌ Build failed. Showing container logs...'
+            echo '❌ Build failed. Showing logs...'
             sh 'docker compose logs voting-ui || true'
             sh 'docker compose logs mysql-db || true'
         }
 
         success {
-            echo '🎉 Deployment succeeded!'
+            echo '🎉 Deployment completed successfully!'
         }
     }
 }
