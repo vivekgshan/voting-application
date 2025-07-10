@@ -1,0 +1,38 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Build & Run') {
+            steps {
+                sh 'docker-compose down || true'
+                sh 'docker-compose up -d --build'
+            }
+        }
+
+        stage('Health Check') {
+            steps {
+                script {
+                    sleep 10
+                    def status = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost", returnStdout: true).trim()
+                    if (status != '200') {
+                        error("Voting UI not responding (HTTP $status)")
+                    } else {
+                        echo "Voting system running successfully (HTTP $status)"
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Build completed.'
+        }
+    }
+}
