@@ -12,7 +12,7 @@ services:
     ports:
       - "3306:3306"
     networks:
-      - voting-net
+      - monitoring-net
     volumes:
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
@@ -36,9 +36,10 @@ services:
       mysql-db:
         condition: service_healthy
     networks:
-      - voting-net
+      - monitoring-net
 
 networks:
-  voting-net:
+  monitoring-net:
     driver: bridge
+    external: true
 
