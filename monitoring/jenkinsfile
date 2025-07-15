@@ -37,7 +37,7 @@ pipeline {
                     echo "⏳ Waiting for services to start..."
                     sleep 10
 
-                    def HOST_IP = "127.0.0.1" // try replacing with actual IP if needed
+                    def HOST_IP = "172.31.91.156" // try replacing with actual IP if needed
                     def prometheusStatus = sh(script: "curl -s -L --connect-timeout 5 -o /dev/null -w '%{http_code}' http://${HOST_IP}:9090", returnStdout: true).trim()
                     def grafanaStatus = sh(script: "curl -s -L --connect-timeout 5 -o /dev/null -w '%{http_code}' http://${HOST_IP}:3000", returnStdout: true).trim()
 
