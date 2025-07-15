@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        GRAFANA_DASHBOARD_DIR = 'monitoring/grafana/dashboards'
+        GRAFANA_DASHBOARDS_DIR = 'monitoring/grafana/dashboards'
         GRAFANA_PROVISIONING_DIR = 'monitoring/grafana/provisioning/dashboards'
     }
 
@@ -31,7 +31,7 @@ pipeline {
                 script {
                     echo "📁 Ensuring Grafana dashboard directories exist..."
                     sh """
-                        mkdir -p ${GRAFANA_DASHBOARD_DIR}
+                        mkdir -p ${GRAFANA_DASHBOARDS_DIR}
                         mkdir -p ${GRAFANA_PROVISIONING_DIR}
                     """
                     echo "✅ Dashboard folders are set."
@@ -54,27 +54,24 @@ pipeline {
                 script {
                     echo "⏳ Waiting for services to become healthy..."
 
-                    def waitForHealthy = { container, retries = 10 ->
-                        def status = "starting"
-                        for (int i = 0; i < retries; i++) {
+                    def waitForHealthy = { container, maxRetries = 10 ->
+                        def status = ""
+                        for (int i = 1; i <= maxRetries; i++) {
                             status = sh(
                                 script: "docker inspect -f '{{.State.Health.Status}}' ${container} || echo unknown",
                                 returnStdout: true
                             ).trim()
-
-                            echo "🔍 ${container} health status: $status"
-                            if (status == "healthy") {
-                                return
-                            }
+                            echo "🔍 ${container} health status: ${status}"
+                            if (status == "healthy") return
                             sleep 5
                         }
-                        error("❌ ${container} did not become healthy. Final status: $status")
+                        error("❌ ${container} did not become healthy. Final status: ${status}")
                     }
 
-                    waitForHealthy("prometheus")
-                    waitForHealthy("grafana")
+                    waitForHealthy('prometheus')
+                    waitForHealthy('grafana')
 
-                    echo "✅ Prometheus & Grafana are healthy"
+                    echo "✅ Prometheus & Grafana are up and healthy"
                 }
             }
         }
