@@ -35,9 +35,10 @@ pipeline {
             steps {
                 script {
                     sleep 10
+
+                    def prometheusStatus = sh(script: "docker exec prometheus curl -s -L -o /dev/null -w '%{http_code}' http://localhost:9090", returnStdout: true).trim()
+                    def grafanaStatus = sh(script: "docker exec grafana curl -s -L -o /dev/null -w '%{http_code}' http://localhost:3000", returnStdout: true).trim()
                    
-                    def prometheusStatus = sh(script: "bash -c 'curl -s -L --connect-timeout 5 -o /dev/null -w \"%{http_code}\" http://127.0.0.1:9090'", returnStdout: true).trim()
-                    def grafanaStatus = sh(script: "bash -c 'curl -s -L --connect-timeout 5 -o /dev/null -w \"%{http_code}\" http://127.0.0.1:3000'", returnStdout: true).trim()
                     echo "📡 Prometheus status: HTTP $prometheusStatus"
                     echo "📡 Grafana status: HTTP $grafanaStatus"
                     
