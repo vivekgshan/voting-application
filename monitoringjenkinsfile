@@ -21,6 +21,24 @@ pipeline {
             }
         }
 
+        stage('Insert Grafana Dashboards') {
+            steps {
+                script {
+                    echo "📥 Cloning dashboards from GitHub..."
+
+                    sh '''
+                        rm -rf monitoring/grafana/dashboards
+                        mkdir -p monitoring/grafana/dashboards
+                        git clone --depth 1 https://github.com/your-user/monitoring-dashboards.git dashboards-temp
+                        cp dashboards-temp/*.json monitoring/grafana/dashboards/
+                        rm -rf dashboards-temp
+                    '''
+
+                    echo "📊 Dashboards copied to monitoring/grafana/dashboards/"
+                }
+            }
+        }
+
         stage('Deploy Prometheus + Grafana') {
             steps {
                 dir('monitoring') {
