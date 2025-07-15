@@ -39,6 +39,18 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+  alertmanager:
+    image: prom/alertmanager
+    container_name: alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager/config.yml:/etc/alertmanager/config.yml
+    command:
+      - "--config.file=/etc/alertmanager/config.yml"
+    networks:
+      - monitoring-net
+
 
 networks:
   monitoring-net:
