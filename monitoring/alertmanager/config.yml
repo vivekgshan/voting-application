@@ -1,0 +1,10 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: 'teams'
+
+receivers:
+  - name: 'teams'
+    webhook_configs:
+      - url: 'http://prometheus-msteams:2000/alertmanager'
