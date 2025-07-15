@@ -50,24 +50,24 @@ pipeline {
                     echo "⏳ Waiting for services to start..."
                     sleep 10
 
-                    def prometheusStatus = sh(
-                        script: "docker exec prometheus wget -q --server-response --spider http://localhost:9090 2>&1 | awk '/HTTP\\// {print \$2}' | head -n 1",
+                    def prometheusHealth = sh(
+                        script: "docker inspect -f '{{.State.Health.Status}}' prometheus || echo unknown",
                         returnStdout: true
                     ).trim()
 
-                    def grafanaStatus = sh(
-                        script: "docker exec grafana curl -s -L -o /dev/null -w '%{http_code}' http://localhost:3000",
+                    def grafanaHealth = sh(
+                        script: "docker inspect -f '{{.State.Health.Status}}' grafana || echo unknown",
                         returnStdout: true
                     ).trim()
 
-                    echo "📡 Prometheus status: HTTP $prometheusStatus"
-                    echo "📡 Grafana status: HTTP $grafanaStatus"
+                    echo "📡 Prometheus health: $prometheusHealth"
+                    echo "📡 Grafana health: $grafanaHealth"
 
-                    if (!['200', '302'].contains(prometheusStatus) || !['200', '302'].contains(grafanaStatus)) {
-                        error("❌ Prometheus or Grafana not reachable (Prometheus: $prometheusStatus, Grafana: $grafanaStatus)")
+                    if (!(prometheusHealth in ['healthy', 'running']) || !(grafanaHealth in ['healthy', 'running'])) {
+                        error("❌ Prometheus or Grafana not healthy (Prometheus: $prometheusHealth, Grafana: $grafanaHealth)")
                     }
 
-                    echo "✅ Prometheus & Grafana are up and running"
+                    echo "✅ Prometheus & Grafana are up and healthy"
                 }
             }
         }
