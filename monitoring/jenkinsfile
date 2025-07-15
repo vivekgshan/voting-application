@@ -37,8 +37,8 @@ pipeline {
                     echo "⏳ Waiting for services to start..."
                     sleep 10
 
-                    def prometheusStatus = sh(script: "curl -s -L -o /dev/null -w '%{http_code}' http://localhost:9090", returnStdout: true).trim()
-                    def grafanaStatus = sh(script: "curl -s -L -o /dev/null -w '%{http_code}' http://localhost:3000", returnStdout: true).trim()
+                    def prometheusStatus = sh(script: "curl -s -L --connect-timeout 5 -o /dev/null -w '%{http_code}' http://172.31.91.156:9090", returnStdout: true).trim()
+                    def grafanaStatus = sh(script: "curl -s -L --connect-timeout 5 -o /dev/null -w '%{http_code}' http://172.31.91.156:3000", returnStdout: true).trim()
 
                     echo "📡 Prometheus status: HTTP $prometheusStatus"
                     echo "📡 Grafana status: HTTP $grafanaStatus"
