@@ -36,7 +36,7 @@ pipeline {
                 script {
                     sleep 10
 
-                    def prometheusStatus = sh(script: "docker exec prometheus curl -s -L -o /dev/null -w '%{http_code}' http://localhost:9090", returnStdout: true).trim()
+                    def prometheusStatus = sh(script: "docker exec prometheus wget -q --server-response --spider http://localhost:9090 2>&1 | awk '/HTTP\\// {print \$2}' | head -n 1", returnStdout: true).trim()
                     def grafanaStatus = sh(script: "docker exec grafana curl -s -L -o /dev/null -w '%{http_code}' http://localhost:3000", returnStdout: true).trim()
                    
                     echo "📡 Prometheus status: HTTP $prometheusStatus"
