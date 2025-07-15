@@ -21,20 +21,15 @@ pipeline {
             }
         }
 
-        stage('Insert Grafana Dashboards') {
+        stage('Validate Dashboard Files') {
             steps {
                 script {
-                    echo "📥 Cloning dashboards from GitHub..."
-
-                    sh '''
-                        rm -rf monitoring/grafana/dashboards
-                        mkdir -p monitoring/grafana/dashboards
-                        git clone --depth 1 https://github.com/vivekgshan/voting-application.git dashboards-temp
-                        cp dashboards-temp/*.json monitoring/grafana/dashboards/
-                        rm -rf dashboards-temp
-                    '''
-
-                    echo "📊 Dashboards copied to monitoring/grafana/dashboards/"
+                    echo "📁 Validating presence of Grafana dashboard JSONs..."
+                    def count = sh(script: "ls monitoring/grafana/dashboards/*.json | wc -l", returnStdout: true).trim()
+                    if (count == "0") {
+                        error("❌ No dashboard JSON files found in monitoring/grafana/dashboards/")
+                    }
+                    echo "✅ Found $count dashboard(s)."
                 }
             }
         }
@@ -68,8 +63,9 @@ pipeline {
                     echo "📡 Prometheus status: HTTP $prometheusStatus"
                     echo "📡 Grafana status: HTTP $grafanaStatus"
 
-                    if (!['200', '302'].contains(prometheusStatus) || !['200', '302'].contains(grafanaStatus))
+                    if (!['200', '302'].contains(prometheusStatus) || !['200', '302'].contains(grafanaStatus)) {
                         error("❌ Prometheus or Grafana not reachable (Prometheus: $prometheusStatus, Grafana: $grafanaStatus)")
+                    }
 
                     echo "✅ Prometheus & Grafana are up and running"
                 }
