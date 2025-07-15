@@ -2,8 +2,7 @@ pipeline {
     agent any
 
     environment {
-        GRAFANA_DASHBOARDS_DIR = 'monitoring/grafana/dashboards'
-        GRAFANA_PROVISIONING_DIR = 'monitoring/grafana/provisioning/dashboards'
+        MONITORING_DIR = "monitoring"
     }
 
     stages {
@@ -31,8 +30,8 @@ pipeline {
                 script {
                     echo "📁 Ensuring Grafana dashboard directories exist..."
                     sh """
-                        mkdir -p ${GRAFANA_DASHBOARDS_DIR}
-                        mkdir -p ${GRAFANA_PROVISIONING_DIR}
+                        mkdir -p ${MONITORING_DIR}/grafana/dashboards
+                        mkdir -p ${MONITORING_DIR}/grafana/provisioning/dashboards
                     """
                     echo "✅ Dashboard folders are set."
                 }
@@ -41,7 +40,7 @@ pipeline {
 
         stage('Deploy Prometheus + Grafana') {
             steps {
-                dir('monitoring') {
+                dir("${MONITORING_DIR}") {
                     echo "📦 Deploying monitoring stack..."
                     sh 'docker compose down || true'
                     sh 'docker compose up -d --build'
@@ -54,24 +53,28 @@ pipeline {
                 script {
                     echo "⏳ Waiting for services to become healthy..."
 
-                    def waitForHealthy = { container, maxRetries = 10 ->
+                    def waitForHealthy = { container, retries = 10, delay = 5 ->
                         def status = ""
-                        for (int i = 1; i <= maxRetries; i++) {
+                        for (int i = 1; i <= retries; i++) {
                             status = sh(
-                                script: "docker inspect -f '{{.State.Health.Status}}' ${container} || echo unknown",
+                                script: "docker inspect --format='{{ .State.Health.Status }}' ${container} || echo unknown",
                                 returnStdout: true
                             ).trim()
-                            echo "🔍 ${container} health status: ${status}"
-                            if (status == "healthy") return
-                            sleep 5
+
+                            echo "🔍 Attempt ${i}: ${container} health = ${status}"
+
+                            if (status == "healthy") {
+                                echo "✅ ${container} is healthy"
+                                return
+                            }
+
+                            sleep time: delay, unit: 'SECONDS'
                         }
                         error("❌ ${container} did not become healthy. Final status: ${status}")
                     }
 
                     waitForHealthy('prometheus')
                     waitForHealthy('grafana')
-
-                    echo "✅ Prometheus & Grafana are up and healthy"
                 }
             }
         }
