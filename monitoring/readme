@@ -1,0 +1,12 @@
+monitoring-project/
+├── docker-compose.yml
+├── prometheus/
+│   └── prometheus.yml
+├── grafana/
+│   ├── datasources/
+│   │   └── datasource.yml
+│   ├── dashboards/
+│   │   ├── app-dashboard.json
+│   │   └── infra-dashboard.json
+│   └── dashboards.yaml
+├── README.md
