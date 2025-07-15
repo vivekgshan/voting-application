@@ -34,16 +34,22 @@ pipeline {
         stage('Validate Monitoring Services') {
             steps {
                 script {
+                    echo "⏳ Waiting for services to start..."
                     sleep 10
-                    def prometheusStatus = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost:9090", returnStdout: true).trim()
-                    def grafanaStatus = sh(script: "curl -s -o /dev/null -w '%{http_code}' http://localhost:3000", returnStdout: true).trim()
-                    
-                    if (prometheusStatus != '200') {
+
+                    def prometheusStatus = sh(script: "curl -s -L -o /dev/null -w '%{http_code}' http://localhost:9090", returnStdout: true).trim()
+                    def grafanaStatus = sh(script: "curl -s -L -o /dev/null -w '%{http_code}' http://localhost:3000", returnStdout: true).trim()
+
+                    echo "📡 Prometheus status: HTTP $prometheusStatus"
+                    echo "📡 Grafana status: HTTP $grafanaStatus"
+
+                    if (!['200', '302'].contains(prometheusStatus)) {
                         error("❌ Prometheus not reachable (HTTP $prometheusStatus)")
                     }
-                    if (grafanaStatus != '200') {
+                    if (!['200', '302'].contains(grafanaStatus)) {
                         error("❌ Grafana not reachable (HTTP $grafanaStatus)")
                     }
+
                     echo "✅ Prometheus & Grafana are up and running"
                 }
             }
