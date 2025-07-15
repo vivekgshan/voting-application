@@ -10,6 +10,11 @@ services:
       - "9090:9090"
     networks:
       - monitoring-net
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:9090"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   grafana:
     image: grafana/grafana
@@ -25,6 +30,11 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     networks:
       - monitoring-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/login"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 networks:
   monitoring-net:
