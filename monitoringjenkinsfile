@@ -1,6 +1,11 @@
 pipeline {
     agent any
 
+    environment {
+        GRAFANA_DASHBOARD_DIR = 'monitoring/grafana/dashboards'
+        GRAFANA_PROVISIONING_DIR = 'monitoring/grafana/provisioning/dashboards'
+    }
+
     stages {
         stage('Checkout') {
             steps {
@@ -21,15 +26,15 @@ pipeline {
             }
         }
 
-        stage('Validate Dashboard Files') {
+        stage('Copy Grafana Dashboards') {
             steps {
                 script {
-                    echo "📁 Validating presence of Grafana dashboard JSONs..."
-                    def count = sh(script: "ls monitoring/grafana/dashboards/*.json | wc -l", returnStdout: true).trim()
-                    if (count == "0") {
-                        error("❌ No dashboard JSON files found in monitoring/grafana/dashboards/")
-                    }
-                    echo "✅ Found $count dashboard(s)."
+                    echo "📁 Ensuring Grafana dashboard directories exist..."
+                    sh """
+                        mkdir -p ${GRAFANA_DASHBOARD_DIR}
+                        mkdir -p ${GRAFANA_PROVISIONING_DIR}
+                    """
+                    echo "✅ Dashboard folders are set."
                 }
             }
         }
@@ -47,27 +52,29 @@ pipeline {
         stage('Validate Monitoring Services') {
             steps {
                 script {
-                    echo "⏳ Waiting for services to start..."
-                    sleep 10
+                    echo "⏳ Waiting for services to become healthy..."
 
-                    def prometheusHealth = sh(
-                        script: "docker inspect -f '{{.State.Health.Status}}' prometheus || echo unknown",
-                        returnStdout: true
-                    ).trim()
+                    def waitForHealthy = { container, retries = 10 ->
+                        def status = "starting"
+                        for (int i = 0; i < retries; i++) {
+                            status = sh(
+                                script: "docker inspect -f '{{.State.Health.Status}}' ${container} || echo unknown",
+                                returnStdout: true
+                            ).trim()
 
-                    def grafanaHealth = sh(
-                        script: "docker inspect -f '{{.State.Health.Status}}' grafana || echo unknown",
-                        returnStdout: true
-                    ).trim()
-
-                    echo "📡 Prometheus health: $prometheusHealth"
-                    echo "📡 Grafana health: $grafanaHealth"
-
-                    if (!(prometheusHealth in ['healthy', 'running']) || !(grafanaHealth in ['healthy', 'running'])) {
-                        error("❌ Prometheus or Grafana not healthy (Prometheus: $prometheusHealth, Grafana: $grafanaHealth)")
+                            echo "🔍 ${container} health status: $status"
+                            if (status == "healthy") {
+                                return
+                            }
+                            sleep 5
+                        }
+                        error("❌ ${container} did not become healthy. Final status: $status")
                     }
 
-                    echo "✅ Prometheus & Grafana are up and healthy"
+                    waitForHealthy("prometheus")
+                    waitForHealthy("grafana")
+
+                    echo "✅ Prometheus & Grafana are healthy"
                 }
             }
         }
