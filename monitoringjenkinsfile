@@ -2,7 +2,8 @@ pipeline {
     agent any
 
     environment {
-        MONITORING_DIR = "monitoring"
+        PROMETHEUS_CONTAINER = 'prometheus'
+        GRAFANA_CONTAINER = 'grafana'
     }
 
     stages {
@@ -25,14 +26,14 @@ pipeline {
             }
         }
 
-        stage('Copy Grafana Dashboards') {
+        stage('Prepare Grafana Dashboard Directories') {
             steps {
                 script {
                     echo "📁 Ensuring Grafana dashboard directories exist..."
-                    sh """
-                        mkdir -p ${MONITORING_DIR}/grafana/dashboards
-                        mkdir -p ${MONITORING_DIR}/grafana/provisioning/dashboards
-                    """
+                    sh '''
+                        mkdir -p monitoring/grafana/dashboards
+                        mkdir -p monitoring/grafana/provisioning/dashboards
+                    '''
                     echo "✅ Dashboard folders are set."
                 }
             }
@@ -40,7 +41,7 @@ pipeline {
 
         stage('Deploy Prometheus + Grafana') {
             steps {
-                dir("${MONITORING_DIR}") {
+                dir('monitoring') {
                     echo "📦 Deploying monitoring stack..."
                     sh 'docker compose down || true'
                     sh 'docker compose up -d --build'
@@ -51,30 +52,61 @@ pipeline {
         stage('Validate Monitoring Services') {
             steps {
                 script {
-                    echo "⏳ Waiting for services to become healthy..."
+                    echo "⏳ Waiting for Prometheus & Grafana to become healthy..."
 
-                    def waitForHealthy = { container, retries = 10, delay = 5 ->
-                        def status = ""
-                        for (int i = 1; i <= retries; i++) {
-                            status = sh(
-                                script: "docker inspect --format='{{ .State.Health.Status }}' ${container} || echo unknown",
-                                returnStdout: true
-                            ).trim()
+                    def maxRetries = 6
+                    def sleepBetweenRetries = 5
+                    def prometheusHealthy = false
+                    def grafanaHealthy = false
 
-                            echo "🔍 Attempt ${i}: ${container} health = ${status}"
+                    for (int i = 1; i <= maxRetries; i++) {
+                        echo "🔁 Check attempt $i..."
 
-                            if (status == "healthy") {
-                                echo "✅ ${container} is healthy"
-                                return
-                            }
+                        def prometheusStatus = sh(
+                            script: "docker exec ${PROMETHEUS_CONTAINER} wget -q --server-response --spider http://localhost:9090 2>&1 | awk '/HTTP\\// {print \$2}' | head -n 1",
+                            returnStdout: true
+                        ).trim()
 
-                            sleep time: delay, unit: 'SECONDS'
+                        def grafanaStatus = sh(
+                            script: "docker exec ${GRAFANA_CONTAINER} curl -s -L -o /dev/null -w '%{http_code}' http://localhost:3000",
+                            returnStdout: true
+                        ).trim()
+
+                        echo "📡 Prometheus HTTP: $prometheusStatus"
+                        echo "📡 Grafana HTTP: $grafanaStatus"
+
+                        def prometheusHealth = sh(
+                            script: "docker inspect -f '{{.State.Health.Status}}' ${PROMETHEUS_CONTAINER} || echo unknown",
+                            returnStdout: true
+                        ).trim()
+
+                        def grafanaHealth = sh(
+                            script: "docker inspect -f '{{.State.Health.Status}}' ${GRAFANA_CONTAINER} || echo unknown",
+                            returnStdout: true
+                        ).trim()
+
+                        echo "📦 Prometheus container health: $prometheusHealth"
+                        echo "📦 Grafana container health: $grafanaHealth"
+
+                        if ((prometheusStatus == '200' || prometheusStatus == '302') && prometheusHealth == 'healthy') {
+                            prometheusHealthy = true
                         }
-                        error("❌ ${container} did not become healthy. Final status: ${status}")
+
+                        if ((grafanaStatus == '200' || grafanaStatus == '302') && grafanaHealth == 'healthy') {
+                            grafanaHealthy = true
+                        }
+
+                        if (prometheusHealthy && grafanaHealthy) {
+                            echo "✅ Prometheus and Grafana are up and healthy."
+                            break
+                        }
+
+                        sleep sleepBetweenRetries
                     }
 
-                    waitForHealthy('prometheus')
-                    waitForHealthy('grafana')
+                    if (!prometheusHealthy || !grafanaHealthy) {
+                        error("❌ Validation failed: Prometheus (${prometheusHealthy ? 'OK' : 'FAIL'}) / Grafana (${grafanaHealthy ? 'OK' : 'FAIL'})")
+                    }
                 }
             }
         }
