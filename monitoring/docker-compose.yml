@@ -39,6 +39,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
   alertmanager:
     image: prom/alertmanager
     container_name: alertmanager
@@ -52,6 +53,51 @@ services:
     networks:
       - monitoring-net
 
+  node-exporter:
+    image: prom/node-exporter
+    container_name: node-exporter
+    networks:
+      - monitoring-net
+    ports:
+      - "9100:9100"
+    restart: unless-stopped
+
+  mysqld-exporter:
+    image: prom/mysqld-exporter
+    container_name: mysqld-exporter
+    environment:
+      - DATA_SOURCE_NAME=root:rootpass@(mysql-db:3306)/
+    networks:
+      - monitoring-net
+    ports:
+      - "9104:9104"
+    depends_on:
+      - mysql-db
+    restart: unless-stopped
+
+  php-voting-app:
+    build: ./php-voting-app
+    container_name: php-voting-app
+    ports:
+      - "8080:80"
+    networks:
+      - monitoring-net
+    restart: unless-stopped
+
+  mysql-db:
+    image: mysql:8.0
+    container_name: mysql-db
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpass
+      - MYSQL_DATABASE=votingdb
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - monitoring-net
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
 
 networks:
   monitoring-net:
